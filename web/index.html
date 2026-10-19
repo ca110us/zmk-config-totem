@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TOTEM Status</title>
+<style>
+  :root {
+    --bg: #f4f4f1;
+    --panel: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6d6d68;
+    --line: #e2e2dc;
+    --key-off: #e9e9e4;
+    --good: #1f9d6b;
+    --warn: #d68a12;
+    --low: #d2452f;
+    --accent: #1c1c1a;
+    --accent-ink: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111211;
+      --panel: #1a1b1a;
+      --ink: #ececea;
+      --muted: #91918b;
+      --line: #2a2b29;
+      --key-off: #262725;
+      --good: #3ccf8e;
+      --warn: #f0a83a;
+      --low: #f06a52;
+      --accent: #ececea;
+      --accent-ink: #111211;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111211;
+    --panel: #1a1b1a;
+    --ink: #ececea;
+    --muted: #91918b;
+    --line: #2a2b29;
+    --key-off: #262725;
+    --good: #3ccf8e;
+    --warn: #f0a83a;
+    --low: #f06a52;
+    --accent: #ececea;
+    --accent-ink: #111211;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 48px; }
+
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: 0.18em; font-weight: 800; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status[data-state="connected"] .dot { background: var(--good); box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 20%, transparent); }
+  .status[data-state="connecting"] .dot { background: var(--warn); animation: pulse 1s infinite alternate; }
+  @keyframes pulse { to { opacity: 0.3; } }
+  .spacer { flex: 1; }
+  button {
+    font: inherit; font-weight: 600; cursor: pointer;
+    border: 0; border-radius: 999px; padding: 9px 18px;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  button.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .halves { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 640px) { .halves { grid-template-columns: 1fr; } }
+  .half {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+    padding: 20px; display: flex; flex-direction: column; gap: 18px;
+  }
+  .half-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .half-name { font-weight: 700; }
+  .half-role { font-size: 12px; color: var(--muted); }
+
+  .keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .key { aspect-ratio: 1; border-radius: 6px; background: var(--key-off); transition: background 0.4s; }
+  .key.on { background: var(--level); }
+
+  .reading { display: flex; align-items: baseline; gap: 4px; font-variant-numeric: tabular-nums; }
+  .pct { font-size: 52px; font-weight: 800; line-height: 1; letter-spacing: -0.02em; }
+  .unit { font-size: 20px; color: var(--muted); font-weight: 600; }
+  .bar { height: 6px; border-radius: 3px; background: var(--key-off); overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--level); transition: width 0.4s; }
+  .meta { font-size: 12px; color: var(--muted); min-height: 18px; }
+
+  .info { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 8px 20px; }
+  .info dl { display: grid; grid-template-columns: max-content 1fr; gap: 0 24px; margin: 0; }
+  .info dt, .info dd { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .info dt { color: var(--muted); }
+  .info dd { overflow-wrap: anywhere; }
+  .info dt:nth-last-of-type(1), .info dd:nth-last-of-type(1) { border-bottom: 0; }
+
+  .notice { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  .notice p { margin: 6px 0; }
+  .error { color: var(--low); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>TOTEM</h1>
+    <span class="status" id="status" data-state="idle"><span class="dot"></span><span id="status-text">Not connected</span></span>
+    <span class="spacer"></span>
+    <button id="connect-all" class="ghost">Show all devices</button>
+    <button id="connect">Connect keyboard</button>
+    <button id="disconnect" class="ghost" hidden>Disconnect</button>
+  </header>
+
+  <section class="halves">
+    <article class="half" id="left">
+      <div class="half-head"><span class="half-name">Left</span><span class="half-role">Central · connects to the computer</span></div>
+      <div class="keys"></div>
+      <div class="reading"><span class="pct">--</span><span class="unit">%</span></div>
+      <div class="bar"><div></div></div>
+      <div class="meta"></div>
+    </article>
+    <article class="half" id="right">
+      <div class="half-head"><span class="half-name">Right</span><span class="half-role">Peripheral · relayed by the left half</span></div>
+      <div class="keys"></div>
+      <div class="reading"><span class="pct">--</span><span class="unit">%</span></div>
+      <div class="bar"><div></div></div>
+      <div class="meta"></div>
+    </article>
+  </section>
+
+  <section class="info">
+    <dl>
+      <dt>Device name</dt><dd id="info-name">--</dd>
+      <dt>Manufacturer</dt><dd id="info-manufacturer">--</dd>
+      <dt>Model</dt><dd id="info-model">--</dd>
+      <dt>Firmware</dt><dd id="info-firmware">--</dd>
+    </dl>
+  </section>
+
+  <section class="notice" id="notice">
+    <p>Open this page in Chrome or Edge. Safari and Firefox do not support Web Bluetooth.</p>
+    <p>Click “Connect keyboard”, then on the keyboard hold Tab and Enter (Adjust layer) and press B. The keyboard advertises for 10 seconds and TOTEM shows up in the dialog.</p>
+    <p>If the dialog says Chrome has no Bluetooth permission, allow it in System Settings → Privacy &amp; Security → Bluetooth.</p>
+  </section>
+</main>
+
+<script>
+// TOTEM keys per half: two rows of 5, one row of 6 (extra outer pinky key), 3 thumb keys.
+// Each entry is [row, column] on a 6-column grid, written for the left half.
+const LEFT_KEYS = [
+  ...[2, 3, 4, 5, 6].map((c) => [1, c]),
+  ...[2, 3, 4, 5, 6].map((c) => [2, c]),
+  ...[1, 2, 3, 4, 5, 6].map((c) => [3, c]),
+  ...[4, 5, 6].map((c) => [4, c]),
+];
+
+const $ = (id) => document.getElementById(id);
+let device = null;
+
+function buildKeys(sideId) {
+  const grid = document.querySelector(`#${sideId} .keys`);
+  // Light keys from the thumbs upward, so a draining battery dims from the top
+  const keys = LEFT_KEYS.map(([row, col]) => {
+    const key = document.createElement('div');
+    key.className = 'key';
+    key.style.gridRow = row;
+    key.style.gridColumn = sideId === 'left' ? col : 7 - col;
+    grid.appendChild(key);
+    return { key, row };
+  });
+  return keys.sort((a, b) => b.row - a.row).map((k) => k.key);
+}
+
+const sides = {
+  left: { el: $('left'), keys: buildKeys('left') },
+  right: { el: $('right'), keys: buildKeys('right') },
+};
+
+function levelColor(pct) {
+  if (pct >= 50) return 'var(--good)';
+  if (pct >= 20) return 'var(--warn)';
+  return 'var(--low)';
+}
+
+function showLevel(side, pct, note) {
+  const { el, keys } = sides[side];
+  const known = pct !== null;
+  el.style.setProperty('--level', known ? levelColor(pct) : 'var(--key-off)');
+  el.querySelector('.pct').textContent = known ? pct : '--';
+  el.querySelector('.bar > div').style.width = known ? `${pct}%` : '0';
+  const lit = known ? Math.round((pct / 100) * keys.length) : 0;
+  keys.forEach((key, i) => key.classList.toggle('on', i < lit));
+  el.querySelector('.meta').textContent = note ?? (known ? `Updated ${new Date().toLocaleTimeString()}` : '');
+}
+
+function setStatus(state, text) {
+  $('status').dataset.state = state;
+  $('status-text').textContent = text;
+  for (const id of ['connect', 'connect-all']) {
+    $(id).hidden = state === 'connected';
+    $(id).disabled = state === 'connecting';
+  }
+  $('disconnect').hidden = state !== 'connected';
+}
+
+function showError(message, { persistent = false } = {}) {
+  const p = document.createElement('p');
+  p.className = 'error';
+  p.textContent = message;
+  $('notice').prepend(p);
+  if (!persistent) setTimeout(() => p.remove(), 10000);
+}
+
+// ZMK labels the forwarded peripheral level with a "Peripheral N" user description;
+// the central's own level has none.
+async function sideOf(characteristic) {
+  try {
+    const descriptor = await characteristic.getDescriptor('gatt.characteristic_user_description');
+    const label = new TextDecoder().decode(await descriptor.readValue());
+    return label.startsWith('Peripheral') ? 'right' : 'left';
+  } catch {
+    return 'left';
+  }
+}
+
+async function watchLevel(characteristic) {
+  const side = await sideOf(characteristic);
+  const render = (value) => {
+    const pct = value.getUint8(0);
+    // The central reports 0 for the peripheral until the right half has sent a reading
+    if (side === 'right' && pct === 0) {
+      showLevel('right', null, 'Waiting for the right half (it may not be connected)');
+    } else {
+      showLevel(side, pct);
+    }
+  };
+  render(await characteristic.readValue());
+  characteristic.addEventListener('characteristicvaluechanged', (e) => render(e.target.value));
+  try {
+    await characteristic.startNotifications();
+  } catch {
+    // Reading once is still useful when notifications are unavailable
+  }
+}
+
+async function readDeviceInfo(server) {
+  const fields = {
+    'info-manufacturer': 'manufacturer_name_string',
+    'info-model': 'model_number_string',
+    'info-firmware': 'firmware_revision_string',
+  };
+  let service;
+  try {
+    service = await server.getPrimaryService('device_information');
+  } catch {
+    return;
+  }
+  for (const [id, uuid] of Object.entries(fields)) {
+    try {
+      const value = await (await service.getCharacteristic(uuid)).readValue();
+      $(id).textContent = new TextDecoder().decode(value);
+    } catch {
+      $(id).textContent = '--';
+    }
+  }
+}
+
+const CONNECT_TIMEOUT_MS = 10000;
+
+async function attach(dev) {
+  if (dev !== device) {
+    device = dev;
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+  }
+  setStatus('connecting', 'Connecting…');
+  const server = await Promise.race([
+    device.gatt.connect(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Connection timed out')), CONNECT_TIMEOUT_MS)),
+  ]);
+  $('info-name').textContent = device.name || '--';
+
+  const services = await server.getPrimaryServices('battery_service');
+  for (const service of services) {
+    for (const characteristic of await service.getCharacteristics('battery_level')) {
+      await watchLevel(characteristic);
+    }
+  }
+  if (services.length < 2) {
+    showLevel('right', null, 'The keyboard does not report the right half. Is the new firmware flashed?');
+  }
+  await readDeviceInfo(server);
+  setStatus('connected', 'Connected');
+}
+
+function onDisconnected() {
+  setStatus('idle', 'Disconnected');
+  for (const side of Object.keys(sides)) {
+    const meta = sides[side].el.querySelector('.meta');
+    if (meta.textContent) meta.textContent = `${meta.textContent} (disconnected)`;
+  }
+}
+
+async function connect(options) {
+  try {
+    await attach(await navigator.bluetooth.requestDevice(options));
+  } catch (err) {
+    setStatus('idle', 'Not connected');
+    if (err.name !== 'NotFoundError') showError(`Connection failed: ${err.message}`);
+  }
+}
+
+// Reconnecting to a device the page already has permission for skips the slow chooser scan.
+// getDevices() remembers permitted devices across page loads where Chrome supports it.
+async function reconnectKnown() {
+  let known = device;
+  if (!known && navigator.bluetooth.getDevices) {
+    const devices = await navigator.bluetooth.getDevices();
+    known = devices.find((d) => d.name?.startsWith('TOTEM'));
+  }
+  if (!known) return false;
+  try {
+    await attach(known);
+    return true;
+  } catch {
+    setStatus('idle', 'Not connected');
+    return false;
+  }
+}
+
+$('connect').addEventListener('click', async () => {
+  if (await reconnectKnown()) return;
+  connect({
+    filters: [{ namePrefix: 'TOTEM' }, { services: ['battery_service'] }],
+    optionalServices: ['battery_service', 'device_information'],
+  });
+});
+
+$('connect-all').addEventListener('click', () =>
+  connect({ acceptAllDevices: true, optionalServices: ['battery_service', 'device_information'] }));
+
+$('disconnect').addEventListener('click', () => device?.gatt.disconnect());
+
+if (new URLSearchParams(location.search).has('demo')) {
+  showLevel('left', 86);
+  showLevel('right', 17);
+  $('info-name').textContent = 'TOTEM';
+  setStatus('connected', 'Demo data');
+} else if (!navigator.bluetooth) {
+  $('connect').disabled = true;
+  $('connect-all').disabled = true;
+  showError('This browser does not support Web Bluetooth. Please use Chrome or Edge.', { persistent: true });
+} else {
+  reconnectKnown();
+}
+</script>
+</body>
+</html>
