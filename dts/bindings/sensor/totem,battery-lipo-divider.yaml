@@ -1,0 +1,14 @@
+description: LiPo battery state of charge via voltage divider and discharge curve
+
+compatible: "totem,battery-lipo-divider"
+
+include: voltage-divider.yaml
+
+properties:
+  full-charge-millivolts:
+    type: int
+    default: 4200
+    description: |
+      Measured voltage that should count as a full battery. Readings are
+      scaled by 4200 / full-charge-millivolts before the curve lookup, which
+      compensates for divider/ADC error and post-charge voltage relaxation.

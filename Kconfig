@@ -1,0 +1,10 @@
+DT_COMPAT_TOTEM_BATTERY_LIPO_DIVIDER := totem,battery-lipo-divider
+
+config TOTEM_BATTERY_LIPO_DIVIDER
+    bool
+    default $(dt_compat_enabled,$(DT_COMPAT_TOTEM_BATTERY_LIPO_DIVIDER))
+    select ADC
+    depends on SENSOR
+    help
+        Battery voltage divider driver that maps LiPo voltage to state of
+        charge using a discharge curve instead of a straight line.
