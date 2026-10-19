@@ -8,3 +8,13 @@ config TOTEM_BATTERY_LIPO_DIVIDER
     help
         Battery voltage divider driver that maps LiPo voltage to state of
         charge using a discharge curve instead of a straight line.
+
+DT_COMPAT_TOTEM_BEHAVIOR_ADV_BURST := totem,behavior-adv-burst
+
+config TOTEM_BEHAVIOR_ADV_BURST
+    bool
+    default $(dt_compat_enabled,$(DT_COMPAT_TOTEM_BEHAVIOR_ADV_BURST))
+    depends on ZMK_BLE && (!ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL)
+    help
+        Behavior that advertises for a short time without dropping the host
+        connection, so Web Bluetooth pages can discover the keyboard.

@@ -1,0 +1,10 @@
+description: Advertise briefly while staying connected, for Web Bluetooth discovery
+
+compatible: "totem,behavior-adv-burst"
+
+include: zero_param.yaml
+
+properties:
+  duration-ms:
+    type: int
+    default: 10000
