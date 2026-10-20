@@ -4,11 +4,14 @@ import ServiceManagement
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let monitor = BatteryMonitor()
+    private let alerts = Alerts()
 
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let leftLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let rightLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
+    private let lowBatteryItem = NSMenuItem(title: "Low Battery Alerts", action: #selector(toggleAlert), keyEquivalent: "")
+    private let disconnectItem = NSMenuItem(title: "Disconnect Alerts", action: #selector(toggleAlert), keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let button = statusItem.button {
@@ -29,13 +32,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refresh), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
-        loginItem.target = self
-        menu.addItem(loginItem)
+        menu.addItem(.separator())
+        lowBatteryItem.representedObject = Alerts.lowBatteryKey
+        disconnectItem.representedObject = Alerts.disconnectKey
+        for item in [lowBatteryItem, disconnectItem, loginItem] {
+            item.target = self
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         statusItem.menu = menu
 
-        monitor.onChange = { [weak self] in self?.render() }
+        monitor.onChange = { [weak self] in
+            guard let self else { return }
+            alerts.update(levels: monitor.levels, isConnected: monitor.isConnected)
+            render()
+        }
         render()
     }
 
@@ -59,8 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusLine.title = monitor.isConnected ? "TOTEM connected" : "TOTEM not connected"
         leftLine.title = "Left: \(left)%"
-        rightLine.title = "Right: \(right)%"
+        // The left half reports no level for the right half while their link is down
+        rightLine.title = monitor.isConnected && monitor.levels[.right] == nil ? "Right: not connected" : "Right: \(right)%"
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        for item in [lowBatteryItem, disconnectItem] {
+            item.state = UserDefaults.standard.bool(forKey: item.representedObject as? String ?? "") ? .on : .off
+        }
     }
 
     private static func statusColor(for percent: Int) -> NSColor {
@@ -73,6 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refresh() {
         monitor.refresh()
+    }
+
+    @objc private func toggleAlert(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        UserDefaults.standard.set(!UserDefaults.standard.bool(forKey: key), forKey: key)
+        render()
     }
 
     @objc private func toggleOpenAtLogin() {

@@ -64,6 +64,7 @@ Add `?demo` to the URL to preview the page with sample data.
 
 - The menu bar shows the TOTEM icon with a dot for the lower of the two halves: green at 50% and above, yellow from 20%, red below 20%.
 - The menu lists each half's level, a refresh item and an **Open at Login** toggle.
+- Notifications warn when a half drops below 20% and again below 10%, and when the keyboard or its right half stays disconnected for 30 seconds. Drops while the Mac goes to sleep are ignored. Each kind can be switched off in the menu (**Low Battery Alerts**, **Disconnect Alerts**).
 - It subscribes to battery notifications instead of polling, and uses about 14 MB of memory.
 
 Build it with `macos/TotemBattery/build.sh`, or create an installable disk image with `macos/TotemBattery/package.sh` (written to `macos/TotemBattery/build/TotemBattery.dmg`). It requires macOS 13 or later and asks for Bluetooth access on first launch. The app is ad-hoc signed, so it is meant for the Mac it was built on.
