@@ -44,9 +44,8 @@
 };
 
 // Swap ZMK's linear battery estimate for the LiPo-curve driver in drivers/battery.
-// full-charge-millivolts: lower it if a full battery still stops short of 100%,
-// raise it if the level stays at 100% for too long after charging.
+// Both halves use the same battery; each half's overlay corrects for its own
+// XIAO board's measurement error with voltage-scale-permille.
 &vbatt {
     compatible = "totem,battery-lipo-divider";
-    full-charge-millivolts = <4050>;
 };

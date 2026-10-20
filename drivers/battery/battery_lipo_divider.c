@@ -2,7 +2,7 @@
  * Voltage divider battery driver for LiPo cells, based on ZMK's
  * zmk,battery-voltage-divider. Instead of ZMK's straight line between
  * 3.45V and 4.2V, the state of charge comes from a LiPo discharge curve,
- * and readings can be calibrated so a freshly charged cell reports 100%.
+ * and each board's readings can be scaled to correct its measurement error.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -17,8 +17,6 @@
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
-
-#define NOMINAL_FULL_MV 4200
 
 struct curve_point {
     uint16_t mv;
@@ -59,7 +57,7 @@ struct bld_config {
     struct gpio_dt_spec power;
     uint32_t output_ohm;
     uint32_t full_ohm;
-    uint16_t full_charge_mv;
+    uint16_t voltage_scale_permille;
 };
 
 struct bld_data {
@@ -109,7 +107,7 @@ static int bld_sample_fetch(const struct device *dev, enum sensor_channel chan) 
                               &val);
 
         uint16_t millivolts = val * (uint64_t)drv_cfg->full_ohm / drv_cfg->output_ohm;
-        uint16_t calibrated_mv = millivolts * NOMINAL_FULL_MV / drv_cfg->full_charge_mv;
+        uint16_t calibrated_mv = millivolts * drv_cfg->voltage_scale_permille / 1000;
         uint8_t percent = lipo_mv_to_pct(calibrated_mv);
         LOG_DBG("ADC raw %d ~ %d mV => %d mV (calibrated %d mV) => %d%%", drv_data->adc_raw, val,
                 millivolts, calibrated_mv, percent);
@@ -222,7 +220,7 @@ static const struct bld_config bld_cfg = {
 #endif
     .output_ohm = DT_INST_PROP(0, output_ohms),
     .full_ohm = DT_INST_PROP(0, full_ohms),
-    .full_charge_mv = DT_INST_PROP(0, full_charge_millivolts),
+    .voltage_scale_permille = DT_INST_PROP(0, voltage_scale_permille),
 };
 
 DEVICE_DT_INST_DEFINE(0, &bld_init, NULL, &bld_data, &bld_cfg, POST_KERNEL,

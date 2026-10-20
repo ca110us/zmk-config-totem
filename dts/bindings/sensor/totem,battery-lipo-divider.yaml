@@ -5,10 +5,11 @@ compatible: "totem,battery-lipo-divider"
 include: voltage-divider.yaml
 
 properties:
-  full-charge-millivolts:
+  voltage-scale-permille:
     type: int
-    default: 4200
+    default: 1000
     description: |
-      Measured voltage that should count as a full battery. Readings are
-      scaled by 4200 / full-charge-millivolts before the curve lookup, which
-      compensates for divider/ADC error and post-charge voltage relaxation.
+      Per-board correction for the divider resistors' tolerance and the ADC's
+      gain error, in thousandths: readings are multiplied by this / 1000 before
+      the curve lookup. 1000 means no correction; 1037 means the board reads
+      3.7% low. It belongs to the controller board, not the battery.

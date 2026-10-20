@@ -15,3 +15,10 @@
         , <&xiao_d 8 GPIO_ACTIVE_HIGH>
         ;
 };
+
+// This XIAO's battery readings run about 3.7% low. Raise the value if a full battery
+// stops short of 100%; lower it if the level stays at 100% too long after charging.
+// Calibrate again when swapping the XIAO board; a new battery needs no change.
+&vbatt {
+    voltage-scale-permille = <1037>;
+};

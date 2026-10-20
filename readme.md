@@ -38,9 +38,9 @@ The image above shows the upstream default layout. This fork uses its own QWERTY
 ZMK's default estimate is a straight line between 3.45 V and 4.2 V, and only reports 100% at 4.2 V, which a resting battery rarely reaches. This fork adds its own driver (`drivers/battery/battery_lipo_divider.c`) that:
 
 - maps the voltage to a typical LiPo discharge curve, and
-- scales readings so that a freshly charged battery reports 100%.
+- corrects each half's readings for its own XIAO board's measurement error.
 
-The calibration point is `full-charge-millivolts` in `config/boards/shields/totem/totem.dtsi` (currently `4050`). Lower it if a full battery still stops short of 100%; raise it if the level stays at 100% for too long after charging.
+The divider resistors' tolerance and the ADC's gain error make every XIAO read the same battery a few percent differently, so each half has its own `voltage-scale-permille` in `config/boards/shields/totem/totem_left.overlay` and `totem_right.overlay` (currently `1037` and `1012`, where `1000` means no correction). Raise a half's value if a full battery stops short of 100%; lower it if the level stays at 100% for too long after charging. The value belongs to the board: recalibrate after swapping a XIAO, but not after replacing a battery.
 
 ### Advertise key for the status page
 
