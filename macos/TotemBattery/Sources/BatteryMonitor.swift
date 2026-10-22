@@ -9,7 +9,9 @@ enum Half {
 ///
 /// Event driven to stay cheap: once connected it only wakes for battery level
 /// notifications, which the keyboard sends when a level changes. While the keyboard
-/// is away it checks again on a slow, tolerant timer and right after the Mac wakes.
+/// is away, e.g. asleep, a pending connection completes as soon as it is back; the
+/// system handles that, so the app does not poll. Only a keyboard it has never seen
+/// is looked for on a slow, tolerant timer.
 final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private static let batteryService = CBUUID(string: "180F")
     private static let batteryLevel = CBUUID(string: "2A19")
@@ -18,6 +20,7 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     private static let powerSavingService = CBUUID(string: "8FC697BD-5C61-4712-86DD-75B98EF03B7A")
     private static let powerSavingEnabled = CBUUID(string: "8FC697BE-5C61-4712-86DD-75B98EF03B7A")
     static let hasPowerSavingKey = "KeyboardHasPowerSaving"
+    private static let keyboardIdentifierKey = "KeyboardIdentifier"
     private static let keyboardNamePrefix = "TOTEM"
     private static let retryInterval: TimeInterval = 60
 
@@ -66,21 +69,38 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     }
 
     private func findKeyboard() {
-        guard central.state == .poweredOn, keyboard == nil else { return }
+        guard central.state == .poweredOn, !isConnected else { return }
 
         // The keyboard does not advertise while connected to the Mac, so ask the system
         // for peripherals it is already connected to instead of scanning.
         let connected = central.retrieveConnectedPeripherals(withServices: [Self.batteryService])
-        guard let match = connected.first(where: { $0.name?.hasPrefix(Self.keyboardNamePrefix) == true }) else {
+        if let match = connected.first(where: { $0.name?.hasPrefix(Self.keyboardNamePrefix) == true }) {
+            connect(match)
+        } else if keyboard == nil, let known = knownKeyboard() {
+            connect(known)
+        } else if keyboard == nil {
             scheduleRetry()
-            return
         }
+    }
 
+    /// The keyboard this Mac has connected to before, even while it is away
+    private func knownKeyboard() -> CBPeripheral? {
+        guard let saved = UserDefaults.standard.string(forKey: Self.keyboardIdentifierKey),
+              let identifier = UUID(uuidString: saved) else { return nil }
+        return central.retrievePeripherals(withIdentifiers: [identifier]).first
+    }
+
+    /// Connects now if the keyboard is connected to the Mac, otherwise as soon as it is.
+    /// Connection attempts never time out, so this also waits out the keyboard's sleep.
+    private func connect(_ peripheral: CBPeripheral) {
         retryTimer?.invalidate()
         retryTimer = nil
-        keyboard = match
-        match.delegate = self
-        central.connect(match)
+        if let keyboard, keyboard !== peripheral {
+            central.cancelPeripheralConnection(keyboard)
+        }
+        keyboard = peripheral
+        peripheral.delegate = self
+        central.connect(peripheral)
     }
 
     private func scheduleRetry() {
@@ -97,6 +117,10 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
 
     private func forgetKeyboard() {
         keyboard = nil
+        resetConnection()
+    }
+
+    private func resetConnection() {
         isConnected = false
         levels = [:]
         halfOf = [:]
@@ -125,19 +149,23 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        UserDefaults.standard.set(peripheral.identifier.uuidString, forKey: Self.keyboardIdentifierKey)
         isConnected = true
         onChange?()
         peripheral.discoverServices([Self.batteryService, Self.powerSavingService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        guard peripheral === keyboard else { return }
         forgetKeyboard()
         scheduleRetry()
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        forgetKeyboard()
-        scheduleRetry()
+        guard peripheral === keyboard else { return }
+        resetConnection()
+        // Pick it up again the moment it reconnects, e.g. when it wakes from sleep
+        central.connect(peripheral)
     }
 
     // MARK: CBPeripheralDelegate
