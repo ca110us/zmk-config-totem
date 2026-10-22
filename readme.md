@@ -42,6 +42,13 @@ ZMK's default estimate is a straight line between 3.45 V and 4.2 V, and only rep
 
 The divider resistors' tolerance and the ADC's gain error make every XIAO read the same battery a few percent differently, so each half has its own `voltage-scale-permille` in `config/boards/shields/totem/totem_left.overlay` and `totem_right.overlay` (currently `1037` and `1012`, where `1000` means no correction). Raise a half's value if a full battery stops short of 100%; lower it if the level stays at 100% for too long after charging. The value belongs to the board: recalibrate after swapping a XIAO, but not after replacing a battery.
 
+### Battery life
+
+The left half drains several times faster than the right: as the central of the split link it has to wake for every connection event (every 7.5 ms), while the right half may skip most of them when it has nothing to send. Two changes reduce the drain without affecting typing:
+
+- **Deep sleep** (`config/totem.conf`). The left half powers off after 30 minutes without a key press, the right half after 60 (`config/totem_right.conf`), and neither sleeps on USB power. A key press wakes a half, but that press is not typed. The right half sleeps later because it only sees its own keys: this way it does not drop off while the left half is still in use, and after breaks shorter than an hour a key on the left half wakes the whole keyboard.
+- **Power saving when idle** (`src/idle_power_saving.c`). After 30 seconds without a key press (ZMK's idle state) the left half slows the split link to 30 ms, and the next key press restores 7.5 ms. While typing nothing changes; the first right-half key after a pause can arrive up to about 20 ms later. It is on by default, and a bonded host can switch it through a small GATT service (the menu bar app's **Power Saving When Idle** item). The setting is stored on the keyboard.
+
 ### Advertise key for the status page
 
 Chrome's Web Bluetooth device picker on macOS only lists devices that are advertising, and ZMK stops advertising once it is connected. Press `Tab` + `Enter` + `B` (ADJ layer) to make the left half advertise for 10 seconds (`drivers/behaviors/behavior_adv_burst.c`).
@@ -63,8 +70,8 @@ Add `?demo` to the URL to preview the page with sample data.
 `macos/TotemBattery` is a small AppKit menu bar app. It reads both halves' battery levels from the already-connected keyboard, so no advertise key is needed.
 
 - The menu bar shows the TOTEM icon with a dot for the lower of the two halves: green at 50% and above, yellow from 20%, red below 20%.
-- The menu lists each half's level, a refresh item and an **Open at Login** toggle.
-- Notifications warn when a half drops below 20% and again below 10%, and when the keyboard or its right half stays disconnected for 30 seconds. Drops while the Mac goes to sleep are ignored. Each kind can be switched off in the menu (**Low Battery Alerts**, **Disconnect Alerts**).
+- The menu lists each half's level, a refresh item, the keyboard's **Power Saving When Idle** setting and an **Open at Login** toggle.
+- Notifications warn when a half drops below 20% and again below 10%, and when the right half loses its link to the left half for 30 seconds while the keyboard stays connected. The whole keyboard disconnecting is not reported, since it powers off on purpose when idle, and drops while the Mac goes to sleep are ignored. Each kind can be switched off in the menu (**Low Battery Alerts**, **Disconnect Alerts**).
 - It subscribes to battery notifications instead of polling, and uses about 14 MB of memory.
 
 Build it with `macos/TotemBattery/build.sh`, or create an installable disk image with `macos/TotemBattery/package.sh` (written to `macos/TotemBattery/build/TotemBattery.dmg`). It requires macOS 13 or later and asks for Bluetooth access on first launch. The app is ad-hoc signed, so it is meant for the Mac it was built on.
@@ -74,7 +81,7 @@ Build it with `macos/TotemBattery/build.sh`, or create an installable disk image
 | Path | Contents |
 | --- | --- |
 | `config/` | Keymap, shield definition and ZMK settings |
-| `drivers/`, `dts/`, `Kconfig`, `CMakeLists.txt`, `zephyr/module.yml` | The battery driver and advertise behavior, loaded by the build as a Zephyr module |
+| `drivers/`, `src/`, `dts/`, `Kconfig`, `CMakeLists.txt`, `zephyr/module.yml` | The battery driver, advertise behavior and idle power saving, loaded by the build as a Zephyr module |
 | `web/` | Battery status page |
 | `macos/TotemBattery/` | Menu bar app |
 

@@ -14,16 +14,23 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     private static let batteryService = CBUUID(string: "180F")
     private static let batteryLevel = CBUUID(string: "2A19")
     private static let userDescription = CBUUID(string: CBUUIDCharacteristicUserDescriptionString)
+    // This fork's firmware setting that slows the split link while the keyboard is idle
+    private static let powerSavingService = CBUUID(string: "8FC697BD-5C61-4712-86DD-75B98EF03B7A")
+    private static let powerSavingEnabled = CBUUID(string: "8FC697BE-5C61-4712-86DD-75B98EF03B7A")
+    static let hasPowerSavingKey = "KeyboardHasPowerSaving"
     private static let keyboardNamePrefix = "TOTEM"
     private static let retryInterval: TimeInterval = 60
 
     var onChange: (() -> Void)?
     private(set) var levels: [Half: Int] = [:]
     private(set) var isConnected = false
+    /// The keyboard's idle power saving setting, or nil until it has been read
+    private(set) var powerSaving: Bool?
 
     private var central: CBCentralManager!
     private var keyboard: CBPeripheral?
     private var halfOf: [ObjectIdentifier: Half] = [:]
+    private var powerSavingCharacteristic: CBCharacteristic?
     private var retryTimer: Timer?
 
     override init() {
@@ -43,6 +50,15 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
                 keyboard.readValue(for: characteristic)
             }
         }
+        if let powerSavingCharacteristic {
+            keyboard.readValue(for: powerSavingCharacteristic)
+        }
+    }
+
+    func setPowerSaving(_ enabled: Bool) {
+        guard let keyboard, let powerSavingCharacteristic else { return }
+        // The menu shows the new state once it has been read back from the keyboard
+        keyboard.writeValue(Data([enabled ? 1 : 0]), for: powerSavingCharacteristic, type: .withResponse)
     }
 
     @objc private func systemDidWake() {
@@ -84,6 +100,8 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
         isConnected = false
         levels = [:]
         halfOf = [:]
+        powerSavingCharacteristic = nil
+        powerSaving = nil
         onChange?()
     }
 
@@ -109,7 +127,7 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         isConnected = true
         onChange?()
-        peripheral.discoverServices([Self.batteryService])
+        peripheral.discoverServices([Self.batteryService, Self.powerSavingService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -125,15 +143,41 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     // MARK: CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard error == nil else { return }
+        let services = peripheral.services ?? []
         // ZMK exposes two battery services: the left half's own, and one relaying the right half
-        for service in peripheral.services ?? [] where service.uuid == Self.batteryService {
+        for service in services where service.uuid == Self.batteryService {
             peripheral.discoverCharacteristics([Self.batteryLevel], for: service)
+        }
+        if let service = services.first(where: { $0.uuid == Self.powerSavingService }) {
+            peripheral.discoverCharacteristics([Self.powerSavingEnabled], for: service)
+        } else {
+            // Older firmware without the setting
+            UserDefaults.standard.set(false, forKey: Self.hasPowerSavingKey)
+            onChange?()
         }
     }
 
+    func peripheral(_ peripheral: CBPeripheral, didModifyServices invalidatedServices: [CBService]) {
+        // The keyboard's services changed, e.g. after flashing new firmware; start over with the new ones
+        halfOf = [:]
+        powerSavingCharacteristic = nil
+        powerSaving = nil
+        peripheral.discoverServices([Self.batteryService, Self.powerSavingService])
+    }
+
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        for characteristic in service.characteristics ?? [] where characteristic.uuid == Self.batteryLevel {
-            peripheral.discoverDescriptors(for: characteristic)
+        for characteristic in service.characteristics ?? [] {
+            switch characteristic.uuid {
+            case Self.batteryLevel:
+                peripheral.discoverDescriptors(for: characteristic)
+            case Self.powerSavingEnabled:
+                powerSavingCharacteristic = characteristic
+                UserDefaults.standard.set(true, forKey: Self.hasPowerSavingKey)
+                peripheral.readValue(for: characteristic)
+            default:
+                break
+            }
         }
     }
 
@@ -153,9 +197,22 @@ final class BatteryMonitor: NSObject, CBCentralManagerDelegate, CBPeripheralDele
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        if characteristic === powerSavingCharacteristic {
+            guard error == nil, let value = characteristic.value?.first else { return }
+            powerSaving = value != 0
+            onChange?()
+            return
+        }
         guard let half = halfOf[ObjectIdentifier(characteristic)], let level = characteristic.value?.first else { return }
         // ZMK reports 0 for the right half until it has heard from it
         levels[half] = half == .right && level == 0 ? nil : Int(level)
         onChange?()
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        // Read back what the keyboard actually stored, whether or not the write succeeded
+        if characteristic === powerSavingCharacteristic {
+            peripheral.readValue(for: characteristic)
+        }
     }
 }

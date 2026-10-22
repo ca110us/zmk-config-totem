@@ -1,8 +1,11 @@
 import AppKit
 import UserNotifications
 
-/// Posts a notification when a half runs low, or when the keyboard or its right half
-/// drops its connection.
+/// Posts a notification when a half runs low, or when the right half drops its link
+/// to the left half while the keyboard stays connected.
+///
+/// The keyboard as a whole disconnecting is not reported: it powers off on purpose
+/// after a while without key presses.
 final class Alerts: NSObject, UNUserNotificationCenterDelegate {
     /// Alert once below each threshold, lowest last
     private static let lowThresholds = [20, 10]
@@ -18,13 +21,8 @@ final class Alerts: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     private var alertedThreshold: [Half: Int] = [:]
     private var lastLevels: [Half: Int] = [:]
-    private var wasConnected = false
-    private var pendingDisconnect: (kind: DisconnectKind, timer: Timer)?
+    private var pendingDisconnect: Timer?
     private var isSleeping = false
-
-    private enum DisconnectKind {
-        case keyboard, rightHalf
-    }
 
     override init() {
         super.init()
@@ -42,7 +40,6 @@ final class Alerts: NSObject, UNUserNotificationCenterDelegate {
         checkLowBattery(levels)
         checkConnection(levels: levels, isConnected: isConnected)
         lastLevels = levels
-        wasConnected = isConnected
     }
 
     private func checkLowBattery(_ levels: [Half: Int]) {
@@ -62,53 +59,39 @@ final class Alerts: NSObject, UNUserNotificationCenterDelegate {
     }
 
     private func checkConnection(levels: [Half: Int], isConnected: Bool) {
-        guard isConnected else {
-            if wasConnected {
-                scheduleDisconnect(.keyboard)
-            }
+        // Nothing to report while the right half is linked, or while the whole keyboard is
+        // away, which most likely means both halves went to sleep
+        guard isConnected, levels[.right] == nil else {
+            cancelPendingDisconnect()
             return
         }
-
-        if pendingDisconnect?.kind == .keyboard {
-            cancelPendingDisconnect()
-        }
-        if levels[.right] != nil {
-            if pendingDisconnect?.kind == .rightHalf {
-                cancelPendingDisconnect()
-            }
-        } else if lastLevels[.right] != nil {
-            // The left half reports 0 for the right half once their link drops
-            scheduleDisconnect(.rightHalf)
+        // The left half reports 0 for the right half once their link drops
+        if lastLevels[.right] != nil {
+            scheduleDisconnect()
         }
     }
 
-    private func scheduleDisconnect(_ kind: DisconnectKind) {
+    private func scheduleDisconnect() {
         guard !isSleeping else { return }
         cancelPendingDisconnect()
         let timer = Timer(timeInterval: Self.disconnectGrace, repeats: false) { [weak self] _ in
             self?.pendingDisconnect = nil
-            self?.postDisconnect(kind)
+            self?.postDisconnect()
         }
         timer.tolerance = 5
         RunLoop.main.add(timer, forMode: .common)
-        pendingDisconnect = (kind, timer)
+        pendingDisconnect = timer
     }
 
     private func cancelPendingDisconnect() {
-        pendingDisconnect?.timer.invalidate()
+        pendingDisconnect?.invalidate()
         pendingDisconnect = nil
     }
 
-    private func postDisconnect(_ kind: DisconnectKind) {
+    private func postDisconnect() {
         guard UserDefaults.standard.bool(forKey: Self.disconnectKey) else { return }
-        switch kind {
-        case .keyboard:
-            post(id: "disconnect", title: "TOTEM disconnected",
-                 body: "The keyboard is no longer connected to this Mac.")
-        case .rightHalf:
-            post(id: "disconnect", title: "TOTEM right half disconnected",
-                 body: "The right half lost its link to the left half, so its keys may not respond.")
-        }
+        post(id: "disconnect", title: "TOTEM right half disconnected",
+             body: "The right half lost its link to the left half, so its keys may not respond.")
     }
 
     private func post(id: String, title: String, body: String) {

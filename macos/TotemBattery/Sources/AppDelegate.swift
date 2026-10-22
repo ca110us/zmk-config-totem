@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let leftLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let rightLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let powerSavingItem = NSMenuItem(title: "Power Saving When Idle", action: #selector(togglePowerSaving), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Open at Login", action: #selector(toggleOpenAtLogin), keyEquivalent: "")
     private let lowBatteryItem = NSMenuItem(title: "Low Battery Alerts", action: #selector(toggleAlert), keyEquivalent: "")
     private let disconnectItem = NSMenuItem(title: "Disconnect Alerts", action: #selector(toggleAlert), keyEquivalent: "")
@@ -35,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         lowBatteryItem.representedObject = Alerts.lowBatteryKey
         disconnectItem.representedObject = Alerts.disconnectKey
-        for item in [lowBatteryItem, disconnectItem, loginItem] {
+        for item in [powerSavingItem, lowBatteryItem, disconnectItem, loginItem] {
             item.target = self
             menu.addItem(item)
         }
@@ -73,6 +74,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         leftLine.title = "Left: \(left)%"
         // The left half reports no level for the right half while their link is down
         rightLine.title = monitor.isConnected && monitor.levels[.right] == nil ? "Right: not connected" : "Right: \(right)%"
+        // Hidden for firmware without the setting; greyed out until it has been read from the keyboard
+        powerSavingItem.isHidden = !UserDefaults.standard.bool(forKey: BatteryMonitor.hasPowerSavingKey)
+        powerSavingItem.state = monitor.powerSaving == true ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
         for item in [lowBatteryItem, disconnectItem] {
             item.state = UserDefaults.standard.bool(forKey: item.representedObject as? String ?? "") ? .on : .off
@@ -89,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func refresh() {
         monitor.refresh()
+    }
+
+    @objc private func togglePowerSaving() {
+        guard let enabled = monitor.powerSaving else { return }
+        monitor.setPowerSaving(!enabled)
     }
 
     @objc private func toggleAlert(_ sender: NSMenuItem) {
@@ -110,5 +119,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.runModal()
         }
         render()
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        menuItem !== powerSavingItem || monitor.powerSaving != nil
     }
 }

@@ -18,3 +18,17 @@ config TOTEM_BEHAVIOR_ADV_BURST
     help
         Behavior that advertises for a short time without dropping the host
         connection, so Web Bluetooth pages can discover the keyboard.
+
+config TOTEM_IDLE_POWER_SAVING
+    bool "Slow the split link while the keyboard is idle"
+    default y
+    depends on ZMK_SPLIT_BLE && ZMK_SPLIT_ROLE_CENTRAL
+    help
+        Lengthens the connection interval to the right half while ZMK reports
+        the keyboard as idle, and restores it on the next key press. A bonded
+        host can turn this on or off over GATT.
+
+config TOTEM_IDLE_POWER_SAVING_INTERVAL
+    int "Split link connection interval while idle, in 1.25 ms units"
+    default 24
+    depends on TOTEM_IDLE_POWER_SAVING
